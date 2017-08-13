@@ -849,4 +849,16 @@ Eigen-3.3/Eigen/QR
 /media/Ibis/User/Documents/GitHub/Path-Planning/src/Eigen-3.3/Eigen/QR
 json.hpp
 /media/Ibis/User/Documents/GitHub/Path-Planning/src/json.hpp
+spline.h
+/media/Ibis/User/Documents/GitHub/Path-Planning/src/spline.h
+
+/media/Ibis/User/Documents/GitHub/Path-Planning/src/spline.h
+cstdio
+-
+cassert
+-
+vector
+-
+algorithm
+-
 
