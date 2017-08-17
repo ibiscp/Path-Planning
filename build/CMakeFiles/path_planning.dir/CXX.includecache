@@ -843,6 +843,8 @@ thread
 -
 vector
 -
+algorithm
+-
 Eigen-3.3/Eigen/Core
 /media/Ibis/User/Documents/GitHub/Path-Planning/src/Eigen-3.3/Eigen/Core
 Eigen-3.3/Eigen/QR

@@ -5,6 +5,7 @@
 #include <iostream>
 #include <thread>
 #include <vector>
+#include <algorithm>
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
@@ -154,6 +155,42 @@ vector<double> getXY(double s, double d, vector<double> maps_s, vector<double> m
 
 }
 
+int findLane(float d){
+    return floor(d/4.0);
+}
+
+/// Find reference to lane
+int sugestedLane(vector<vector<double>> sensor_fusion, double car_s, double car_d){
+    vector <double> vel_lane = {99.0, 99.0, 99.0};
+
+    int car_D = findLane(car_d);
+
+    for (int i=0; i<sensor_fusion.size(); i++){
+        double vx = sensor_fusion[i][3];
+        double vy = sensor_fusion[i][4];
+        double check_speed = sqrt(vx*vx+vy*vy) * 2.23694;
+        double s = sensor_fusion[i][5];
+        float d = sensor_fusion[i][6];
+        int calculated_lane = findLane(d);
+
+        //cout << calculated_lane << endl;
+        if ((check_speed < vel_lane[calculated_lane]) && (calculated_lane >= 0) && (s > car_s-30) && (s < car_s+100))
+            vel_lane[calculated_lane] = check_speed;
+    }
+
+    //cout << vel_lane[0] << " " << vel_lane[1] << " " << vel_lane[2] << endl;
+    int desired_lane = std::distance(begin(vel_lane), max_element(begin(vel_lane), end(vel_lane)));
+
+    if ((vel_lane[desired_lane] > vel_lane[car_D] - 3.0) && (desired_lane != car_D)){
+        if (desired_lane>car_D)
+            return car_D + 1;
+        else if (desired_lane<car_D)
+            return car_D - 1;
+    }
+    else
+        return car_D;
+}
+
 int main() {
     uWS::Hub h;
 
@@ -195,9 +232,12 @@ int main() {
     int lane = 1;
 
     // Reference velocity
-    double ref_vel = 49.5;
+    double ref_vel = .0;
 
-    h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy, &lane, &ref_vel](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+    int sugested_Lane = 1;
+    vector<double> max_vel = {49.5, 0.0, 0.0};
+
+    h.onMessage([&max_vel, &sugested_Lane,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy, &lane, &ref_vel](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
     uWS::OpCode opCode) {
         // "42" at the start of the message means there's a websocket message event.
         // The 4 signifies a websocket message
@@ -236,16 +276,80 @@ int main() {
 
                     int prev_size = previous_path_x.size();
 
+                    double distance = 100;
+                    double min_vel = 49.5;
+
+                    /// Find reference to velocity
+                    for (int i=0; i<sensor_fusion.size(); i++){
+                        // Car is in my lane
+                        float d = sensor_fusion[i][6];
+
+                        if(d < (2+4*lane + 2) && d > (2+4*lane - 2)){
+                            double vx = sensor_fusion[i][3];
+                            double vy = sensor_fusion[i][4];
+                            double check_speed = sqrt(vx*vx+vy*vy) * 2.23694;
+                            double check_car_s = sensor_fusion[i][5];
+
+                            if((check_car_s > car_s) && (check_car_s - car_s) < 40){
+                                distance = min (check_car_s - car_s, distance);
+                                min_vel = min(check_speed, min_vel);
+
+                                int l = sugestedLane(sensor_fusion, car_s, car_d);
+                                if (sugested_Lane != l){
+                                    sugested_Lane = l;
+                                    cout << "Prepare to move to lane " << sugested_Lane << endl;
+                                }
+                            }
+                        }
+                    }
+                    // Update speed vector
+                    max_vel = {max_vel[0], max_vel[2], min_vel};
+
+                    if ((max_vel[1] == max_vel[0]) && (max_vel[2] != max_vel[1]))
+                        cout << "Tracking vehicle in front" << endl;
+                    else if ((max_vel[1] != max_vel[0]) && (max_vel[2] == max_vel[0]))
+                        cout << "Maximum speed" << endl;
+
+                    /// Adapt speed based on distance from the vehicle in front
+                    if (distance < 15)
+                        ref_vel -= .7;
+                    else if  (distance < 20)
+                        ref_vel -= .5;
+                    else if (car_speed > max_vel[2])
+                        ref_vel -= .2;
+                    else if ((car_speed < max_vel[2]) && (ref_vel < max_vel[2]))
+                        ref_vel += .3;
+
+                    /// Check if can change lane
+                    if (sugested_Lane != lane){
+                        bool can_change = true;
+                        for (int i=0; i<sensor_fusion.size(); i++){
+                            double s = sensor_fusion[i][5];
+                            int d = findLane(sensor_fusion[i][6]);
+
+                            // If vehicle is in the same the car is trying to enter
+                            if (d == sugested_Lane)
+                                // If
+                                if ((s < car_s + 20) && (s > car_s - 10))
+                                    can_change = false;
+                        }
+                        if (can_change){
+                            lane = sugested_Lane;
+                            cout << "Moving to lane " << lane << endl;
+                        }
+                    }
+
+
                     // List of spaced x and y waypoints to interpolate
                     vector<double> ptsx;
                     vector<double> ptsy;
-                                        
+
                     // References
                     double ref_x = car_x;
                     double ref_y = car_y;
                     double ref_yaw = deg2rad(car_yaw);
-                    
-                    // If previous size is almost empty, use the car as starting reference                    
+
+                    // If previous size is almost empty, use the car as starting reference
                     if(prev_size < 2){
                         // Use two points that make the path tangent to the car
                         double prev_car_x = car_x - cos(car_yaw);
@@ -276,8 +380,8 @@ int main() {
                     }
 
                     // In Frenet add evenly 30m spaced  points ahead of the starting reference
-                    vector<double> next_wp0 = getXY(car_s+30, (2+4*lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
-                    vector<double> next_wp1 = getXY(car_s+60, (2+4*lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+                    vector<double> next_wp0 = getXY(car_s+50, (2+4*lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+                    vector<double> next_wp1 = getXY(car_s+70, (2+4*lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
                     vector<double> next_wp2 = getXY(car_s+90, (2+4*lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
 
                     ptsx.push_back(next_wp0[0]);
@@ -341,7 +445,7 @@ int main() {
                         next_x_vals.push_back(x_point);
                         next_y_vals.push_back(y_point);
                     }
-                    
+
                     json msgJson;
                     msgJson["next_x"] = next_x_vals;
                     msgJson["next_y"] = next_y_vals;
