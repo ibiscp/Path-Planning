@@ -9,7 +9,7 @@ The vehicle uses sensor data in order to track all the vehicles around and deter
 #### Follow the speed limit
 The vehicle is set to follow a maximum speed limit of 49,5 MPH. If the vehicle detects a car in front at a distance of 20-40m, it adjusts its speed to follow the car in front, if the vehicle is at a distance of 10-20m, it decreases the speed in 5 MPH, and anything less than that, decreases it in 10 MPH.
 
-'''cpp
+```cpp
 /// Adapt speed based on distance from the vehicle in front
 if (distance < 10)
     ref_vel = max(max_vel[2]-10.0, ref_vel-0.7); // Emergency breaking
@@ -19,7 +19,7 @@ else if (car_speed > max_vel[2])
     ref_vel = max(max_vel[2], ref_vel-0.3); // Speed Down
 else if ((car_speed < max_vel[2]) && (ref_vel < max_vel[2]))
     ref_vel = min(max_vel[2], ref_vel+0.3); // Speed up
-'''
+```
 
 #### Max Acceleration and Jerk are not Exceeded
 It was not implemented a controller for the speed, however, the maximum acceleration and jerk are not exceeded because the speed is slowly modified and the trajectory is created using a spline.
