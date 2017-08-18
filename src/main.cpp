@@ -45,6 +45,7 @@ string hasData(string s) {
 double distance(double x1, double y1, double x2, double y2) {
     return sqrt((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1));
 }
+
 int ClosestWaypoint(double x, double y, vector<double> maps_x, vector<double> maps_y) {
 
     double closestLen = 100000; //large number
@@ -58,7 +59,6 @@ int ClosestWaypoint(double x, double y, vector<double> maps_x, vector<double> ma
             closestLen = dist;
             closestWaypoint = i;
         }
-
     }
 
     return closestWaypoint;
@@ -155,15 +155,14 @@ vector<double> getXY(double s, double d, vector<double> maps_s, vector<double> m
 
 }
 
+// Given a d value, return the lane where the vehicle is
 int findLane(float d){
     return floor(d/4.0);
 }
 
-/// Find reference to lane
-int sugestedLane(vector<vector<double>> sensor_fusion, double car_s, double car_d){
+// Find the fastest lane for the vehicle
+int findFastestLane(vector<vector<double>> sensor_fusion, double car_s, double car_d){
     vector <double> vel_lane = {99.0, 99.0, 99.0};
-
-    int car_D = findLane(car_d);
 
     for (int i=0; i<sensor_fusion.size(); i++){
         double vx = sensor_fusion[i][3];
@@ -173,22 +172,22 @@ int sugestedLane(vector<vector<double>> sensor_fusion, double car_s, double car_
         float d = sensor_fusion[i][6];
         int calculated_lane = findLane(d);
 
-        //cout << calculated_lane << endl;
-        if ((check_speed < vel_lane[calculated_lane]) && (calculated_lane >= 0) && (s > car_s-30) && (s < car_s+100))
-            vel_lane[calculated_lane] = check_speed;
+        if ((calculated_lane >= 0) && (s > car_s - 5.0) && (s < car_s+100))
+            vel_lane[calculated_lane] = min(check_speed, vel_lane[calculated_lane]);
     }
 
-    //cout << vel_lane[0] << " " << vel_lane[1] << " " << vel_lane[2] << endl;
+    // Find index of the fastest lane
     int desired_lane = std::distance(begin(vel_lane), max_element(begin(vel_lane), end(vel_lane)));
 
-    if ((vel_lane[desired_lane] > vel_lane[car_D] - 3.0) && (desired_lane != car_D)){
-        if (desired_lane>car_D)
-            return car_D + 1;
-        else if (desired_lane<car_D)
-            return car_D - 1;
+    // Increment or decrement lane
+    if (vel_lane[desired_lane] > vel_lane[car_d] - 3.0){
+        if (desired_lane>car_d)
+            car_d += 1;
+        else if (desired_lane<car_d)
+            car_d -= 1;
     }
-    else
-        return car_D;
+
+    return car_d;
 }
 
 int main() {
@@ -234,10 +233,13 @@ int main() {
     // Reference velocity
     double ref_vel = .0;
 
-    int sugested_Lane = 1;
+    // Fastest lane
+    int fastest_lane = 1;
+
+    // Tracked velocity
     vector<double> max_vel = {49.5, 0.0, 0.0};
 
-    h.onMessage([&max_vel, &sugested_Lane,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy, &lane, &ref_vel](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+    h.onMessage([&max_vel, &fastest_lane,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy, &lane, &ref_vel](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
     uWS::OpCode opCode) {
         // "42" at the start of the message means there's a websocket message event.
         // The 4 signifies a websocket message
@@ -276,29 +278,37 @@ int main() {
 
                     int prev_size = previous_path_x.size();
 
-                    double distance = 100;
+                    double distance = 100.0;
                     double min_vel = 49.5;
 
                     /// Find reference to velocity
                     for (int i=0; i<sensor_fusion.size(); i++){
                         // Car is in my lane
-                        float d = sensor_fusion[i][6];
+                        float check_car_d = sensor_fusion[i][6];
+                        double check_car_s = sensor_fusion[i][5];
 
-                        if(d < (2+4*lane + 2) && d > (2+4*lane - 2)){
+                        // Consider only if the vehicle is in the same lane and in front
+                        if(check_car_d < (2+4*lane+2) && check_car_d > (2+4*lane-2) && (check_car_s > car_s)){
                             double vx = sensor_fusion[i][3];
                             double vy = sensor_fusion[i][4];
                             double check_speed = sqrt(vx*vx+vy*vy) * 2.23694;
-                            double check_car_s = sensor_fusion[i][5];
 
-                            if((check_car_s > car_s) && (check_car_s - car_s) < 40){
+                            // If there is a vehicle 100 meters above, calculate new lane
+                            if(check_car_s - car_s < 60 && findLane(car_d)==lane){
+                                int l = findFastestLane(sensor_fusion, car_s, findLane(car_d));
+                                if (fastest_lane != l){
+                                    fastest_lane = l;
+                                    if (fastest_lane == lane)
+                                        cout << "Keep on lane " << fastest_lane+1 << endl;
+                                    else
+                                        cout << "Prepare to move to lane " << fastest_lane+1 << endl;
+                                }
+                            }
+
+                            // If there is a vehicle 40 meters above, calculate new speed
+                            if(check_car_s - car_s < 40){
                                 distance = min (check_car_s - car_s, distance);
                                 min_vel = min(check_speed, min_vel);
-
-                                int l = sugestedLane(sensor_fusion, car_s, car_d);
-                                if (sugested_Lane != l){
-                                    sugested_Lane = l;
-                                    cout << "Prepare to move to lane " << sugested_Lane << endl;
-                                }
                             }
                         }
                     }
@@ -312,33 +322,35 @@ int main() {
 
                     /// Adapt speed based on distance from the vehicle in front
                     if (distance < 15)
-                        ref_vel -= .7;
+                        ref_vel = max(max_vel[2]-10.0, ref_vel-0.7); // Emergency breaking
                     else if  (distance < 20)
-                        ref_vel -= .5;
+                        ref_vel = max(max_vel[2]-5.0, ref_vel-0.5); // Too close
                     else if (car_speed > max_vel[2])
-                        ref_vel -= .2;
+                        ref_vel = max(max_vel[2], ref_vel-0.3); // Speed Down
                     else if ((car_speed < max_vel[2]) && (ref_vel < max_vel[2]))
-                        ref_vel += .3;
+                        ref_vel = min(max_vel[2], ref_vel+0.3); // Speed up
 
                     /// Check if can change lane
-                    if (sugested_Lane != lane){
+                    if (fastest_lane != lane){
                         bool can_change = true;
                         for (int i=0; i<sensor_fusion.size(); i++){
                             double s = sensor_fusion[i][5];
                             int d = findLane(sensor_fusion[i][6]);
+                            double vx = sensor_fusion[i][3];
+                            double vy = sensor_fusion[i][4];
+                            double check_speed = sqrt(vx*vx+vy*vy) * 2.23694;
 
                             // If vehicle is in the same the car is trying to enter
-                            if (d == sugested_Lane)
-                                // If
-                                if ((s < car_s + 20) && (s > car_s - 10))
+                            if (d == fastest_lane)
+                                // If there is no space or there is a car in high speed coming, do not change lane
+                                if ((s<car_s+30 && s>car_s-10) || (s>car_s-20 && s<car_s && check_speed>car_speed+10))
                                     can_change = false;
                         }
                         if (can_change){
-                            lane = sugested_Lane;
-                            cout << "Moving to lane " << lane << endl;
+                            lane = fastest_lane;
+                            cout << "Moving to lane " << lane+1 << endl;
                         }
                     }
-
 
                     // List of spaced x and y waypoints to interpolate
                     vector<double> ptsx;
@@ -382,7 +394,7 @@ int main() {
                     // In Frenet add evenly 30m spaced  points ahead of the starting reference
                     vector<double> next_wp0 = getXY(car_s+50, (2+4*lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
                     vector<double> next_wp1 = getXY(car_s+70, (2+4*lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
-                    vector<double> next_wp2 = getXY(car_s+90, (2+4*lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+                    vector<double> next_wp2 = getXY(car_s+100, (2+4*lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
 
                     ptsx.push_back(next_wp0[0]);
                     ptsx.push_back(next_wp1[0]);

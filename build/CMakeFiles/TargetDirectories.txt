@@ -1,3 +1,0 @@
-/media/Ibis/User/Documents/GitHub/Path-Planning/build/CMakeFiles/edit_cache.dir
-/media/Ibis/User/Documents/GitHub/Path-Planning/build/CMakeFiles/rebuild_cache.dir
-/media/Ibis/User/Documents/GitHub/Path-Planning/build/CMakeFiles/path_planning.dir

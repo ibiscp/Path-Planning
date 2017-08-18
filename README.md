@@ -1,5 +1,28 @@
 # CarND-Path-Planning-Project
 Self-Driving Car Engineer Nanodegree Program
+
+### Rubric Criteria
+
+#### Avoid collisions
+The vehicle uses sensor data in order to track all the vehicles around and determine the maximum speed based on vehicles in front and also if it is safe or not to change lanes. It also avoids to change lane if a vehicle is coming from behind in high speed.
+
+#### Follow the speed limit
+The vehicle is set to follow a maximum speed limit of 49,5 MPH. If the vehicle detects a car in front at a distance of 20-40m, it adjusts its speed to follow the car in front, if the vehicle is at a distance of 10-20m, it decreases the speed in 5 MPH, and anything less than that, decreases it in 10 MPH.
+
+'''cpp
+/// Adapt speed based on distance from the vehicle in front
+if (distance < 10)
+    ref_vel = max(max_vel[2]-10.0, ref_vel-0.7); // Emergency breaking
+else if  (distance < 20)
+    ref_vel = max(max_vel[2]-5.0, ref_vel-0.5); // Too close
+else if (car_speed > max_vel[2])
+    ref_vel = max(max_vel[2], ref_vel-0.3); // Speed Down
+else if ((car_speed < max_vel[2]) && (ref_vel < max_vel[2]))
+    ref_vel = min(max_vel[2], ref_vel+0.3); // Speed up
+'''
+
+#### Max Acceleration and Jerk are not Exceeded
+It was not implemented a controller for the speed, however, the maximum acceleration and jerk are not exceeded because the speed is slowly modified and the trajectory is created using a spline.
    
 ### Simulator.
 You can download the Term3 Simulator which contains the Path Planning Project from the [releases tab (https://github.com/udacity/self-driving-car-sim/releases).
@@ -14,10 +37,8 @@ The highway's waypoints loop around so the frenet s value, distance along the ro
 
 ## Basic Build Instructions
 
-1. Clone this repo.
-2. Make a build directory: `mkdir build && cd build`
-3. Compile: `cmake .. && make`
-4. Run it: `./path_planning`.
+1. Clone this repo
+2. Run it: `./run.sh`
 
 Here is the data provided from the Simulator to the C++ Program
 
